@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -26,6 +27,16 @@ func (c *client) ReadMessages() {
 	defer func() {
 		c.manager.RemoveClient(c)
 	}()
+
+	// Set how long I will wait for a pong response
+	err := c.conn.SetReadDeadline(time.Now().Add(PONG_WAIT))
+	if err != nil {
+		log.Println("Error setting pong wait time: ", err)
+		return
+	}
+
+	// Set pong handler
+	c.conn.SetPongHandler(c.PongHandler)
 
 	for {
 		// Check if the connection has an error
@@ -66,18 +77,42 @@ func (c *client) WriteMessages() {
 		c.manager.RemoveClient(c)
 	}()
 
-	for msg := range c.buffer {
-		err := c.conn.WriteMessage(websocket.TextMessage, msg)
-		if err != nil {
-			log.Println("Error sending message: ", err)
+	ticker := time.NewTicker(PINT_INTERVAL)
+
+	for {
+		select {
+		// Handle when I receive data from the conn buffer
+		case msg, ok := <-c.buffer:
+			// If the ok is false means the channel has been closed
+			if !ok {
+				err := c.conn.WriteMessage(websocket.CloseMessage, nil)
+				if err != nil {
+					log.Println("Error sending the close conn message:", err)
+				}
+				return
+			}
+
+			// Write the content of the channel
+			err := c.conn.WriteMessage(websocket.TextMessage, msg)
+			if err != nil {
+				log.Println("Error sending message: ", err)
+			}
+
+			log.Println("Message sent")
+
+		// Handle when I the ping interval ends
+		case <-ticker.C:
+			// Send Ping
+			err := c.conn.WriteMessage(websocket.PingMessage, nil)
+			if err != nil {
+				log.Println("Error pinging connection: ", err)
+				return
+			}
 		}
-
-		log.Println("Message sent")
 	}
+}
 
-	// If the look ends means the channel has been closed
-	err := c.conn.WriteMessage(websocket.CloseMessage, nil)
-	if err != nil {
-		log.Println("Error sending the close conn message:", err)
-	}
+// PongHandler handles when a Pong message is received, reset the deadline timer
+func (c client) PongHandler(pongMsg string) error {
+	return c.conn.SetReadDeadline(time.Now().Add(PONG_WAIT))
 }
