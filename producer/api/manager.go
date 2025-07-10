@@ -21,6 +21,7 @@ type manager struct {
 // NewManager creates an instance of the Manager struct
 func NewManager() *manager {
 	wsUpgrader := websocket.Upgrader{
+		CheckOrigin:     checkOrigin,
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 	}
@@ -90,4 +91,14 @@ func (m *manager) RegisterHandler(eventType string, handler eventHandler) {
 
 	// Register the event handler
 	m.Handlers[eventType] = handler
+}
+
+// checkOrigin checks the origin of the upgrade request and define if allows the upgrade or not
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+
+	switch origin {
+	default:
+		return true
+	}
 }
